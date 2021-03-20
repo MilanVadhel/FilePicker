@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">FilePickerDemo</string>
+    <string name="pick_image">Pick Image</string>
+    <string name="pick_video">Pick Video</string>
+    <string name="pick_audio">Pick Audio</string>
+    <string name="pick_document">Pick Document</string>
+    <string name="cancel">Cancel</string>
+    <string name="ask_camera_permission">Ask Camera Permission</string>
+</resources>
