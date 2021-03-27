@@ -1,33 +1,31 @@
 package com.wayfortech.filepickerdemo
 
-import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
+import android.os.Environment
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import com.wayfortech.filepickerdemo.enum.FileType.*
 import com.wayfortech.filepickerdemo.utils.Constants
-import com.wayfortech.filepickerdemo.utils.Constants.CAMERA_IMAGE_REQUEST_CODE
-import com.wayfortech.filepickerdemo.utils.Constants.CAMERA_VIDEO_REQUEST_CODE
 import com.wayfortech.filepickerdemo.utils.Constants.FILE_TYPE
-import com.wayfortech.filepickerdemo.utils.Constants.GALLERY_IMAGE_REQUEST_CODE
-import com.wayfortech.filepickerdemo.utils.Constants.GALLERY_VIDEO_REQUEST_CODE
 import com.wayfortech.filepickerdemo.utils.Constants.MIME_AUDIO
 import com.wayfortech.filepickerdemo.utils.Constants.MIME_IMAGE
 import com.wayfortech.filepickerdemo.utils.Constants.MIME_VIDEO
-import com.wayfortech.filepickerdemo.utils.Constants.RECORD_AUDIO_REQUEST_CODE
-import com.wayfortech.filepickerdemo.utils.Constants.STORAGE_AUDIO_REQUEST_CODE
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
 
 class FilePickerActivity : AppCompatActivity() {
 
     private val TAG = "FilePickerActivity"
     private lateinit var alertDialogBuilder: AlertDialog.Builder
+    lateinit var imageFileUri: Uri
+    lateinit var videoFileUri: Uri
 
     private val requestMultiplePermission =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -40,22 +38,11 @@ class FilePickerActivity : AppCompatActivity() {
             }
         }
 
-    private val getContent =
-        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-            uri?.let {
-                val intent = Intent()
-                intent.putExtra("FILE", getFileFromUri(uri))
-                setResult(RESULT_OK, intent)
-                finish()
-            }
-        }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_file_picker)
         setUpDialog()
         requestPermission()
-        //checkWhichFile(intent.extras?.get(FILE_TYPE)?.toString())
     }
 
     private fun requestPermission() {
@@ -80,10 +67,6 @@ class FilePickerActivity : AppCompatActivity() {
                 pickVideo()
             } else if (it.equals(AUDIO.name)) {
                 pickAudio()
-            } else if (it.equals(DOCUMENT.name)) {
-                pickDocument()
-            } else {
-
             }
         }
     }
@@ -97,7 +80,6 @@ class FilePickerActivity : AppCompatActivity() {
                     if (position == 0) {
                         captureImageFromCamera()
                     } else {
-                        //selectImageFromGallery()
                         getContent(MIME_IMAGE)
                     }
                 }
@@ -109,22 +91,11 @@ class FilePickerActivity : AppCompatActivity() {
                     dialogInterface?.dismiss()
                     finish()
                 }
-
             })
         alertDialogBuilder.setOnCancelListener {
             finish()
         }
         alertDialogBuilder.show()
-    }
-
-    private fun captureImageFromCamera() {
-        val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        startActivityForResult(cameraIntent, CAMERA_IMAGE_REQUEST_CODE)
-    }
-
-    private fun selectImageFromGallery() {
-        val galleryIntent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-        startActivityForResult(galleryIntent, GALLERY_IMAGE_REQUEST_CODE)
     }
 
     private fun pickVideo() {
@@ -136,7 +107,6 @@ class FilePickerActivity : AppCompatActivity() {
                     if (position == 0) {
                         captureVideoFromCamera()
                     } else {
-                        //selectVideoFromGallery()
                         getContent(MIME_VIDEO)
                     }
                 }
@@ -156,16 +126,6 @@ class FilePickerActivity : AppCompatActivity() {
         alertDialogBuilder.show()
     }
 
-    private fun captureVideoFromCamera() {
-        val cameraIntent = Intent(MediaStore.ACTION_VIDEO_CAPTURE)
-        startActivityForResult(cameraIntent, CAMERA_VIDEO_REQUEST_CODE)
-    }
-
-    private fun selectVideoFromGallery() {
-        val cameraIntent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
-        startActivityForResult(cameraIntent, GALLERY_VIDEO_REQUEST_CODE)
-    }
-
     private fun pickAudio() {
         alertDialogBuilder.setTitle(R.string.pick_audio)
         alertDialogBuilder.setItems(
@@ -173,9 +133,6 @@ class FilePickerActivity : AppCompatActivity() {
             object : DialogInterface.OnClickListener {
                 override fun onClick(dialogInterface: DialogInterface?, position: Int) {
                     if (position == 0) {
-                        recordAudio()
-                    } else {
-                        //selectAudioFromStorage()
                         getContent(MIME_AUDIO)
                     }
                 }
@@ -195,18 +152,66 @@ class FilePickerActivity : AppCompatActivity() {
         alertDialogBuilder.show()
     }
 
-    private fun recordAudio() {
-        val intent = Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION)
-        startActivityForResult(intent, RECORD_AUDIO_REQUEST_CODE)
+    val captureImage = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            imageFileUri.let {
+                val intent = Intent()
+                intent.putExtra("FILE", it)
+                setResult(RESULT_OK, intent)
+                finish()
+            }
+        }
     }
 
-    private fun selectAudioFromStorage() {
-        val storageIntent = Intent(Intent.ACTION_PICK, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
-        startActivityForResult(storageIntent, STORAGE_AUDIO_REQUEST_CODE)
+    private fun captureImageFromCamera() {
+        captureImage.launch(createImageFileAndGetFileUri())
     }
 
-    private fun pickDocument() {
-        TODO("Not yet implemented")
+    private fun createImageFileAndGetFileUri(): Uri {
+        val timeStamp = SimpleDateFormat.getDateTimeInstance().format(Date())
+        val fileName = "Image_$timeStamp"
+        val storageDir = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            Environment.getStorageDirectory()
+        } else {
+            applicationContext.filesDir
+        }
+        val imageFile = File.createTempFile(fileName, ".jpg", storageDir)
+        imageFileUri = FileProvider.getUriForFile(
+            applicationContext,
+            applicationContext.packageName + ".provider", imageFile
+        )
+        return imageFileUri
+    }
+
+    val captureVideo = registerForActivityResult(ActivityResultContracts.TakeVideo()) {
+        videoFileUri.let {
+            val intent = Intent()
+            intent.putExtra("FILE", it)
+            setResult(RESULT_OK, intent)
+            finish()
+        }
+    }
+
+    private fun captureVideoFromCamera() {
+        captureVideo.launch(createVideoFileAndGetFileUri())
+    }
+
+    private fun createVideoFileAndGetFileUri(): Uri {
+        val timeStamp = SimpleDateFormat.getDateTimeInstance().format(Date())
+        val fileName = "Video_$timeStamp"
+        val storageDir = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            Environment.getStorageDirectory()
+        } else {
+            applicationContext.filesDir
+        }
+        val videoFile = File.createTempFile(fileName, ".mp4", storageDir)
+        if (videoFile != null) {
+            videoFileUri = FileProvider.getUriForFile(
+                applicationContext,
+                applicationContext.packageName + ".provider", videoFile
+            )
+        }
+        return videoFileUri
     }
 
     private fun getContent(mimeType: String) {
@@ -217,67 +222,14 @@ class FilePickerActivity : AppCompatActivity() {
         }
     }
 
-    private fun getFileFromUri(uri: Uri): File? {
-        val filePathColumn = arrayOf(MediaStore.Files.FileColumns.DATA)
-        var file: File? = null
-        val contentResolver = applicationContext.contentResolver
-        val cursor = contentResolver.query(
-            uri,
-            filePathColumn, null, null, null
-        )
-        if (cursor != null) {
-            cursor.moveToFirst()
-            val columnIndex = cursor.getColumnIndex(filePathColumn[0])
-            val path = cursor.getString(columnIndex)
-            file = File(path)
-            cursor.close()
-        }
-        return file
-    }
-
-    fun getPath(uri: Uri?, context: Context): String? {
-        val projection = arrayOf(MediaStore.Video.Media.DATA)
-        val cursor = context.contentResolver.query(uri!!, projection, null, null, null)
-        return if (cursor != null) {
-            val column_index = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)
-            cursor.moveToFirst()
-            val path = cursor.getString(column_index)
-            cursor.close()
-            path
-        } else {
-            null
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode == RESULT_OK && data != null) {
-            when (requestCode) {
-                CAMERA_IMAGE_REQUEST_CODE -> {
-                    setResult(RESULT_OK, data)
-                    finish()
-                }
-                GALLERY_IMAGE_REQUEST_CODE -> {
-                    setResult(RESULT_OK, data)
-                    finish()
-                }
-                CAMERA_VIDEO_REQUEST_CODE -> {
-                    setResult(RESULT_OK, data)
-                    finish()
-                }
-                GALLERY_VIDEO_REQUEST_CODE -> {
-                    setResult(RESULT_OK, data)
-                    finish()
-                }
-                STORAGE_AUDIO_REQUEST_CODE -> {
-                    setResult(RESULT_OK, data)
-                    finish()
-                }
-                RECORD_AUDIO_REQUEST_CODE -> {
-                    setResult(RESULT_OK, data)
-                    finish()
-                }
+    private val getContent =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let {
+                val intent = Intent()
+                intent.putExtra("FILE", uri)
+                setResult(RESULT_OK, intent)
+                finish()
             }
         }
-    }
+
 }
